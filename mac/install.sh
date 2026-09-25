@@ -20,9 +20,16 @@ if [[ ${1:-} == "--authorize" ]]; then
   install -m755 "$HERE/omarchy-continuityd" "$SUPPORT/omarchy-continuityd"
   mkdir -p "$HOME/.ssh" && chmod 700 "$HOME/.ssh"
   touch "$HOME/.ssh/authorized_keys" && chmod 600 "$HOME/.ssh/authorized_keys"
-  LINE="restrict,from=\"169.254.0.0/16\",command=\"$SUPPORT/omarchy-continuityd\" $PUB"
-  if grep -qF -- "$(cut -d' ' -f2 <<<"$PUB")" "$HOME/.ssh/authorized_keys"; then
-    echo "Omarchy key already authorized"
+  # The path contains a space ("Application Support") and sshd hands command= to the
+  # login shell with -c, so it must be single-quoted inside the clause.
+  LINE="restrict,from=\"169.254.0.0/16\",command=\"'$SUPPORT/omarchy-continuityd'\" $PUB"
+  KEYPART=$(cut -d' ' -f2 <<<"$PUB")
+  if grep -qF -- "$KEYPART" "$HOME/.ssh/authorized_keys"; then
+    # Replace an existing entry for this key so a fixed restriction line takes effect.
+    grep -vF -- "$KEYPART" "$HOME/.ssh/authorized_keys" > "$HOME/.ssh/authorized_keys.tmp" || true
+    echo "$LINE" >> "$HOME/.ssh/authorized_keys.tmp"
+    mv "$HOME/.ssh/authorized_keys.tmp" "$HOME/.ssh/authorized_keys" && chmod 600 "$HOME/.ssh/authorized_keys"
+    echo "updated the Omarchy machine's key entry"
   else
     echo "$LINE" >> "$HOME/.ssh/authorized_keys"
     echo "authorized the Omarchy machine's key, restricted to omarchy-continuityd"
