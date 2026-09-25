@@ -1,0 +1,21 @@
+#!/bin/bash
+# omarchy-continuity-idle-watch — runs from a user timer every minute.
+#
+# The Mac sends an "awake" heartbeat every minute while it is unlocked and the
+# cable is in. If we are holding this machine awake on its behalf and the last
+# heartbeat is older than MAX_AGE seconds (cable pulled, Mac asleep or locked),
+# give the idle lock back.
+set -u
+export OMARCHY_PATH="${OMARCHY_PATH:-/usr/share/omarchy}"
+export PATH="$OMARCHY_PATH/bin:/usr/local/bin:/usr/bin:$PATH"
+STATE="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/omarchy-continuity"
+MAX_AGE="${OC_AWAKE_MAX_AGE:-150}"
+
+[[ -f $STATE/inhibiting ]] || exit 0
+now=$(date +%s)
+last=$(stat -c %Y "$STATE/awake" 2>/dev/null || echo 0)
+if (( now - last > MAX_AGE )); then
+  omarchy-toggle-idle allow-idle >/dev/null 2>&1
+  rm -f "$STATE/inhibiting" "$STATE/awake"
+  logger -t omarchy-continuity "awake hold expired (no heartbeat for $((now - last))s), idle lock re-enabled"
+fi

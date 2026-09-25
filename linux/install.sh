@@ -19,12 +19,24 @@ MAC_HOST="${OC_MAC_HOST:-}"   # optional: the Mac's Thunderbolt address, else di
 
 install -Dm755 "$HERE/omarchy-continuityd" "$HOME/.local/bin/omarchy-continuityd"
 
+# --- awake heartbeat watchdog: gives the idle lock back when the Mac's heartbeat stops ---
+install -Dm755 "$HERE/omarchy-continuity-idle-watch" "$HOME/.local/bin/omarchy-continuity-idle-watch"
+install -Dm644 "$HERE/systemd/omarchy-continuity-idle.service" "$HOME/.config/systemd/user/omarchy-continuity-idle.service"
+install -Dm644 "$HERE/systemd/omarchy-continuity-idle.timer" "$HOME/.config/systemd/user/omarchy-continuity-idle.timer"
+systemctl --user daemon-reload
+systemctl --user enable --now omarchy-continuity-idle.timer >/dev/null
+
 # --- accept the Mac's key, restricted to the daemon and to link-local sources ---
 mkdir -p "$HOME/.ssh" && chmod 700 "$HOME/.ssh"
 touch "$HOME/.ssh/authorized_keys" && chmod 600 "$HOME/.ssh/authorized_keys"
 LINE="restrict,from=\"169.254.0.0/16\",command=\"$HOME/.local/bin/omarchy-continuityd\" $PUB"
-if grep -qF -- "$(cut -d' ' -f2 <<<"$PUB")" "$HOME/.ssh/authorized_keys"; then
-  echo "Mac key already authorized"
+KEYPART=$(cut -d' ' -f2 <<<"$PUB")
+if grep -qF -- "$KEYPART" "$HOME/.ssh/authorized_keys"; then
+  # Replace an existing entry for this key so a changed restriction line takes effect.
+  grep -vF -- "$KEYPART" "$HOME/.ssh/authorized_keys" > "$HOME/.ssh/authorized_keys.tmp" || true
+  echo "$LINE" >> "$HOME/.ssh/authorized_keys.tmp"
+  mv "$HOME/.ssh/authorized_keys.tmp" "$HOME/.ssh/authorized_keys" && chmod 600 "$HOME/.ssh/authorized_keys"
+  echo "updated the Mac key's entry"
 else
   echo "$LINE" >> "$HOME/.ssh/authorized_keys"
   echo "authorized the Mac's key, restricted to omarchy-continuityd"

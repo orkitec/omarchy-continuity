@@ -5,8 +5,10 @@
 # ~/.ssh/authorized_keys) to this command, so the only things it can ever do here
 # are the verbs below. SSH_ORIGINAL_COMMAND carries "<verb> [argument]".
 #
-#   lock            lock the screen
+#   lock            lock the screen (and stop holding it awake)
 #   unlock          unlock the screen (needs the face-unlock plugin's opt-in IPC unlock)
+#   awake           heartbeat: the Mac is connected and unlocked, keep this machine from
+#                   idle-locking; expires on its own if the heartbeats stop (cable out)
 #   status          lock screen status as JSON
 #   open <url>      open an http(s) URL in the default browser
 set -u
@@ -19,6 +21,9 @@ if [[ -z ${HYPRLAND_INSTANCE_SIGNATURE:-} ]]; then
   [[ -n $sig ]] && export HYPRLAND_INSTANCE_SIGNATURE="$sig"
 fi
 
+STATE="$XDG_RUNTIME_DIR/omarchy-continuity"
+mkdir -p "$STATE"
+
 cmd="${SSH_ORIGINAL_COMMAND:-$*}"
 verb="${cmd%% *}"
 arg=""
@@ -26,8 +31,29 @@ arg=""
 peer="${SSH_CLIENT:-}"; peer="${peer%% *}"
 log() { logger -t omarchy-continuity "$*"; }
 
+# Idle inhibit is Omarchy's own "stay awake" toggle. We only ever release it if
+# we were the ones who set it, so a stay-awake the user chose is left alone.
+hold_awake() {
+  touch "$STATE/awake"
+  if [[ ! -f $STATE/inhibiting ]]; then
+    if [[ $(omarchy-toggle-idle status 2>/dev/null) == *'"enabled":true'* ]]; then
+      return  # user already holds it; don't take ownership
+    fi
+    omarchy-toggle-idle stay-awake >/dev/null 2>&1 && touch "$STATE/inhibiting" && log "holding awake (Mac unlocked)"
+  fi
+}
+release_awake() {
+  rm -f "$STATE/awake"
+  if [[ -f $STATE/inhibiting ]]; then
+    omarchy-toggle-idle allow-idle >/dev/null 2>&1
+    rm -f "$STATE/inhibiting"
+    log "released awake hold"
+  fi
+}
+
 case "$verb" in
   lock)
+    release_awake
     if [[ $(omarchy-shell lock isLocked 2>/dev/null) == "true" ]]; then
       echo "already-locked"
     else
@@ -39,7 +65,23 @@ case "$verb" in
   unlock)
     out=$(omarchy-shell lock unlock 2>&1)
     log "unlock requested by ${peer:-local}: ${out:-no-reply}"
+    hold_awake
     echo "${out:-failed}"
+    ;;
+  awake)
+    # Optional argument: the Mac account at the console. Remembered so tab hand-off
+    # and lock requests from here go to that account (the Mac has several).
+    if [[ -n $arg ]]; then
+      if [[ $arg =~ ^[a-z_][a-z0-9._-]{0,31}$ ]]; then
+        [[ $(cat "$STATE/mac-user" 2>/dev/null) == "$arg" ]] || log "Mac console user is now $arg"
+        printf '%s\n' "$arg" > "$STATE/mac-user"
+      else
+        echo "rejected" >&2
+        exit 65
+      fi
+    fi
+    hold_awake
+    echo "ok"
     ;;
   status)
     omarchy-shell lock status

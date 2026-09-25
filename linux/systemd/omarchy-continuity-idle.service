@@ -1,0 +1,6 @@
+[Unit]
+Description=omarchy-continuity: release the awake hold when the Mac's heartbeat stops
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/omarchy-continuity-idle-watch

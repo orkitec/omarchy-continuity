@@ -23,6 +23,7 @@ or agent. The forced command understands a handful of verbs and nothing else:
 |---|---|---|
 | `lock` | lock the screen | display sleep (locks when "require password" is on) |
 | `unlock` | unlock the screen (opt-in, see below) | not available |
+| `awake` | heartbeat: hold off the idle lock while the Mac is unlocked | not available |
 | `open <http(s) url>` | open in the default browser | open in the default browser |
 | `status` | lock screen state as JSON | `locked` / `unlocked` |
 
@@ -45,6 +46,26 @@ Nothing unlocks the Mac: macOS does not unlock itself programmatically.
   lock screen has no unlock IPC; locking still works without it.
 
 Whoever can unlock the Mac can unlock the Omarchy machine. That is the point.
+
+### No idle lock while you work on the Mac
+
+While the cursor is on the Mac, the Omarchy machine sees no input and would idle-lock
+after its usual timeout, even though you're sitting right there. So the Mac sends an
+`awake` heartbeat once a minute while it is unlocked. Omarchy answers by setting its own
+"stay awake" toggle (the same one as `omarchy toggle idle stay-awake`) and remembers
+that it did so. A user timer checks every minute: no heartbeat for about 2.5 minutes,
+because the cable is out, the Mac is asleep or locked, and the toggle is released
+again. A stay-awake you set yourself is never touched. Locking the Mac releases the
+hold immediately and locks Omarchy.
+
+### Several accounts on the Mac
+
+Each Mac account runs its own lock watcher with its own key: run `mac/install.sh` in
+every account, authorize each printed key on Omarchy with `linux/install.sh`, and run
+`mac/install.sh --authorize` in every account so Omarchy can reach each of them. With
+fast user switching, only the account that owns the display sends anything; its
+heartbeat carries the account name, and Omarchy sends tabs and lock requests to
+whichever account was last seen at the console.
 
 ## Tab hand-off
 
