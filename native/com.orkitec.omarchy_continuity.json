@@ -1,0 +1,7 @@
+{
+  "name": "com.orkitec.omarchy_continuity",
+  "description": "omarchy-continuity: open the current tab on the other machine over the Thunderbolt link",
+  "path": "@PATH@",
+  "type": "stdio",
+  "allowed_origins": ["chrome-extension://@EXT_ID@/"]
+}

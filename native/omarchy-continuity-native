@@ -1,0 +1,91 @@
+#!/usr/bin/env python3
+"""Native messaging host for the omarchy-continuity browser extension.
+
+Chrome/Chromium starts this on demand and speaks length-prefixed JSON over
+stdio. Each message is {"action": "open", "url": "..."}; the host forwards the
+URL to the other machine with `ssh <peer> open <url>` and replies
+{"ok": true/false, "reply": "..."}.
+
+The peer is read from a config file with lines `host=`, `user=`, `key=`:
+  Linux:  $XDG_CONFIG_HOME/omarchy-continuity/peer   (~/.config/omarchy-continuity/peer)
+  macOS:  ~/Library/Application Support/omarchy-continuity/peer
+"""
+import json
+import os
+import struct
+import subprocess
+import sys
+
+
+def config_path():
+    if sys.platform == "darwin":
+        return os.path.expanduser("~/Library/Application Support/omarchy-continuity/peer")
+    base = os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config"))
+    return os.path.join(base, "omarchy-continuity", "peer")
+
+
+def load_peer():
+    peer = {"host": "", "user": "", "key": os.path.expanduser("~/.ssh/omarchy-continuity")}
+    try:
+        with open(config_path()) as f:
+            for line in f:
+                line = line.strip()
+                if "=" in line and not line.startswith("#"):
+                    k, v = line.split("=", 1)
+                    peer[k.strip()] = os.path.expanduser(v.strip())
+    except FileNotFoundError:
+        pass
+    return peer
+
+
+def read_message():
+    raw = sys.stdin.buffer.read(4)
+    if len(raw) < 4:
+        return None
+    (length,) = struct.unpack("<I", raw)
+    return json.loads(sys.stdin.buffer.read(length).decode("utf-8"))
+
+
+def send_message(obj):
+    data = json.dumps(obj).encode("utf-8")
+    sys.stdout.buffer.write(struct.pack("<I", len(data)) + data)
+    sys.stdout.buffer.flush()
+
+
+def forward(url):
+    peer = load_peer()
+    if not peer["host"] or not peer["user"]:
+        return False, "peer not configured (" + config_path() + ")"
+    if not (url.startswith("http://") or url.startswith("https://")) or " " in url or len(url) > 4096:
+        return False, "only http(s) URLs are forwarded"
+    cmd = [
+        "/usr/bin/ssh", "-i", peer["key"],
+        "-o", "BatchMode=yes", "-o", "IdentitiesOnly=yes",
+        "-o", "ConnectTimeout=3", "-o", "StrictHostKeyChecking=accept-new",
+        peer["user"] + "@" + peer["host"], "open " + url,
+    ]
+    try:
+        p = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+    except subprocess.TimeoutExpired:
+        return False, "timeout talking to " + peer["host"]
+    reply = (p.stdout + p.stderr).strip()
+    return p.returncode == 0 and reply.endswith("ok"), reply or ("exit " + str(p.returncode))
+
+
+def main():
+    while True:
+        msg = read_message()
+        if msg is None:
+            return
+        if msg.get("action") == "open":
+            ok, reply = forward(str(msg.get("url", "")))
+            send_message({"ok": ok, "reply": reply})
+        elif msg.get("action") == "ping":
+            peer = load_peer()
+            send_message({"ok": bool(peer["host"]), "reply": peer["host"] or "peer not configured"})
+        else:
+            send_message({"ok": False, "reply": "unknown action"})
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,37 @@
+#!/bin/bash
+# omarchy-continuityd — SSH forced command on the Mac (Remote Login must be on).
+#
+# The Omarchy machine connects with a key restricted to this command, so these
+# verbs are all it can do here. SSH_ORIGINAL_COMMAND carries "<verb> [argument]".
+#
+#   lock            put the display to sleep, which locks if "require password" is on
+#   open <url>      open an http(s) URL in the default browser
+#   status          "locked" / "unlocked"
+set -u
+shopt -s extglob
+
+cmd="${SSH_ORIGINAL_COMMAND:-$*}"
+verb="${cmd%% *}"
+arg=""
+[[ $cmd == *" "* ]] && arg="${cmd#* }"
+
+case "$verb" in
+  lock)
+    /usr/bin/pmset displaysleepnow
+    echo "ok"
+    ;;
+  status)
+    if /usr/sbin/ioreg -n Root -d1 -a 2>/dev/null | grep -q 'CGSSessionScreenIsLocked'; then echo "locked"; else echo "unlocked"; fi
+    ;;
+  open)
+    if [[ ${#arg} -gt 4096 || $arg != http?(s)://+([!\ ]) ]]; then
+      echo "rejected" >&2
+      exit 65
+    fi
+    /usr/bin/open "$arg" && echo "ok"
+    ;;
+  *)
+    echo "omarchy-continuity: unknown command '${verb}'" >&2
+    exit 64
+    ;;
+esac

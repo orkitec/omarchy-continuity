@@ -1,0 +1,37 @@
+{
+  "manifest_version": 3,
+  "name": "omarchy-continuity",
+  "version": "0.1.0",
+  "description": "Open or move the current tab to the machine next to you over the Thunderbolt link.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAnkmUlrdjqMYXldbIOY14EsCiC4x/Gfv8B/Tfv5DLTcARw90cR+osPLgsl0xOpYGkDbw0xJKF4GdYsCP+Xa0Ta/19AQibbGrt2Ke/Oe0v9eQJ5rG99YDZ6egKq366Nh+YStNJvRDCrnABwAYVso++s+N03VJHca/j8SU0bQ9kPFx5ge3w4LnxgwMyRFXp89E2n/98MVF3Au3YP/afGQR7YSaAYi8eXKNXFyE9y5AMIZtvGBwdw3j7zekAOAEzX9by1hsMmGL/Yl8QS1YQ8c73RqVUq5tDFsdtDWg+067a5gOzGIFUCnH1laBLuiMNPAtM3ypGcz3lfoTQU2BEVQ+/0QIDAQAB",
+  "permissions": [
+    "contextMenus",
+    "nativeMessaging",
+    "tabs",
+    "notifications"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Move this tab to the other machine",
+    "default_icon": "icon.png"
+  },
+  "icons": {
+    "128": "icon.png"
+  },
+  "commands": {
+    "open-on-other": {
+      "suggested_key": {
+        "default": "Alt+Shift+O"
+      },
+      "description": "Open this tab on the other machine"
+    },
+    "move-to-other": {
+      "suggested_key": {
+        "default": "Alt+Shift+M"
+      },
+      "description": "Move this tab to the other machine"
+    }
+  }
+}

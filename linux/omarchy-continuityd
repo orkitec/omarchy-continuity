@@ -1,0 +1,67 @@
+#!/bin/bash
+# omarchy-continuityd — SSH forced command on the Omarchy machine.
+#
+# The Mac connects over the Thunderbolt link with a key that is restricted (in
+# ~/.ssh/authorized_keys) to this command, so the only things it can ever do here
+# are the verbs below. SSH_ORIGINAL_COMMAND carries "<verb> [argument]".
+#
+#   lock            lock the screen
+#   unlock          unlock the screen (needs the face-unlock plugin's opt-in IPC unlock)
+#   status          lock screen status as JSON
+#   open <url>      open an http(s) URL in the default browser
+set -u
+
+export OMARCHY_PATH="${OMARCHY_PATH:-/usr/share/omarchy}"
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+export PATH="$OMARCHY_PATH/bin:/usr/local/bin:/usr/bin:$PATH"
+if [[ -z ${HYPRLAND_INSTANCE_SIGNATURE:-} ]]; then
+  sig=$(ls -t "$XDG_RUNTIME_DIR/hypr" 2>/dev/null | head -1)
+  [[ -n $sig ]] && export HYPRLAND_INSTANCE_SIGNATURE="$sig"
+fi
+
+cmd="${SSH_ORIGINAL_COMMAND:-$*}"
+verb="${cmd%% *}"
+arg=""
+[[ $cmd == *" "* ]] && arg="${cmd#* }"
+peer="${SSH_CLIENT:-}"; peer="${peer%% *}"
+log() { logger -t omarchy-continuity "$*"; }
+
+case "$verb" in
+  lock)
+    if [[ $(omarchy-shell lock isLocked 2>/dev/null) == "true" ]]; then
+      echo "already-locked"
+    else
+      omarchy-system-lock >/dev/null 2>&1
+      log "lock requested by ${peer:-local}"
+      echo "ok"
+    fi
+    ;;
+  unlock)
+    out=$(omarchy-shell lock unlock 2>&1)
+    log "unlock requested by ${peer:-local}: ${out:-no-reply}"
+    echo "${out:-failed}"
+    ;;
+  status)
+    omarchy-shell lock status
+    ;;
+  open)
+    # Only web URLs, no whitespace, bounded length: this is the one verb that takes input.
+    shopt -s extglob
+    if [[ ${#arg} -gt 4096 || $arg != http?(s)://+([!\ ]) ]]; then
+      echo "rejected" >&2
+      exit 65
+    fi
+    # Run inside the user's systemd session so the browser gets the graphical environment.
+    if systemd-run --user --quiet --collect --unit="omarchy-continuity-open-$$" xdg-open "$arg" 2>/dev/null; then
+      log "open requested by ${peer:-local}: ${arg:0:120}"
+      echo "ok"
+    else
+      echo "failed"
+      exit 1
+    fi
+    ;;
+  *)
+    echo "omarchy-continuity: unknown command '${verb}'" >&2
+    exit 64
+    ;;
+esac

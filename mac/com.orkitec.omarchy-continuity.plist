@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.orkitec.omarchy-continuity</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>@BIN@/lockwatcher</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>OC_HOST</key>
+    <string>@HOST@</string>
+    <key>OC_USER</key>
+    <string>@USER@</string>
+    <key>OC_KEY</key>
+    <string>@KEY@</string>
+    <key>OC_SYNC_LOCK</key>
+    <string>1</string>
+    <key>OC_SYNC_UNLOCK</key>
+    <string>1</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>@LOG@</string>
+  <key>StandardErrorPath</key>
+  <string>@LOG@</string>
+</dict>
+</plist>
