@@ -20,6 +20,8 @@
     <string>1</string>
     <key>OC_SYNC_UNLOCK</key>
     <string>1</string>
+    <key>OC_SYNC_CLIPBOARD</key>
+    <string>1</string>
   </dict>
   <key>RunAtLoad</key>
   <true/>

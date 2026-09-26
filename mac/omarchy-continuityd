@@ -7,8 +7,11 @@
 #   lock            put the display to sleep, which locks if "require password" is on
 #   open <url>      open an http(s) URL in the default browser
 #   status          "locked" / "unlocked"
+#   clip [mime]     stdin becomes this Mac's pasteboard (text/plain or image/png);
+#                   the Omarchy machine's clipboard watcher sends every copy made there
 set -u
 shopt -s extglob
+STATE="$HOME/Library/Application Support/omarchy-continuity/state"
 
 cmd="${SSH_ORIGINAL_COMMAND:-$*}"
 verb="${cmd%% *}"
@@ -29,6 +32,33 @@ case "$verb" in
       exit 65
     fi
     /usr/bin/open "$arg" && echo "ok"
+    ;;
+  clip)
+    # Bounded payload, two formats. The hash of what arrived is kept so the lock watcher's
+    # pasteboard poll recognises it and does not send the same bytes straight back.
+    mime="${arg:-text/plain}"
+    case "$mime" in
+      text/plain | text/plain\;charset=utf-8) mime="text/plain" ;;
+      image/png) ;;
+      *) echo "rejected" >&2; exit 65 ;;
+    esac
+    max="${OC_CLIP_MAX_BYTES:-8388608}"
+    tmp=$(mktemp -t omarchy-continuity-clip)
+    head -c "$((max + 1))" > "$tmp"
+    size=$(stat -f %z "$tmp")
+    if (( size == 0 )) || (( size > max )); then
+      rm -f "$tmp"
+      echo "rejected" >&2
+      exit 65
+    fi
+    mkdir -p "$STATE"
+    /usr/bin/shasum -a 256 < "$tmp" | cut -d' ' -f1 > "$STATE/clip-in.sha"
+    if [[ $mime == text/plain ]]; then
+      /usr/bin/pbcopy < "$tmp" && echo "ok"
+    else
+      /usr/bin/osascript -e "set the clipboard to (read (POSIX file \"$tmp\") as «class PNGf»)" >/dev/null && echo "ok"
+    fi
+    rm -f "$tmp"
     ;;
   *)
     echo "omarchy-continuity: unknown command '${verb}'" >&2

@@ -1,0 +1,12 @@
+[Unit]
+Description=omarchy-continuity: send this machine's clipboard to the Mac as it changes
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+ExecStart=%h/.local/bin/omarchy-continuity-clip-watch
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=graphical-session.target

@@ -11,6 +11,8 @@
 #                   idle-locking; expires on its own if the heartbeats stop (cable out)
 #   status          lock screen status as JSON
 #   open <url>      open an http(s) URL in the default browser
+#   clip [mime]     stdin becomes this machine's clipboard (text/plain or image/png);
+#                   the Mac's watcher sends every copy made over there
 set -u
 
 export OMARCHY_PATH="${OMARCHY_PATH:-/usr/share/omarchy}"
@@ -33,14 +35,20 @@ log() { logger -t omarchy-continuity "$*"; }
 
 # Idle inhibit is Omarchy's own "stay awake" toggle. We only ever release it if
 # we were the ones who set it, so a stay-awake the user chose is left alone.
+# The toggle is one shared flag, so if something else switches it off while we
+# hold it (the menu, `omarchy toggle idle`), the next heartbeat takes it again:
+# the Mac being unlocked is the rule, and the hold is only as good as the flag.
 hold_awake() {
   touch "$STATE/awake"
-  if [[ ! -f $STATE/inhibiting ]]; then
-    if [[ $(omarchy-toggle-idle status 2>/dev/null) == *'"enabled":true'* ]]; then
-      return  # user already holds it; don't take ownership
-    fi
-    omarchy-toggle-idle stay-awake >/dev/null 2>&1 && touch "$STATE/inhibiting" && log "holding awake (Mac unlocked)"
+  local enabled=0
+  [[ $(omarchy-toggle-idle status 2>/dev/null) == *'"enabled":true'* ]] && enabled=1
+  if [[ -f $STATE/inhibiting ]]; then
+    (( enabled )) && return
+    omarchy-toggle-idle stay-awake >/dev/null 2>&1 && log "re-holding awake (stay-awake was switched off while the Mac is unlocked)"
+    return
   fi
+  (( enabled )) && return  # user already holds it; don't take ownership
+  omarchy-toggle-idle stay-awake >/dev/null 2>&1 && touch "$STATE/inhibiting" && log "holding awake (Mac unlocked)"
 }
 release_awake() {
   rm -f "$STATE/awake"
@@ -101,6 +109,44 @@ case "$verb" in
       echo "failed"
       exit 1
     fi
+    ;;
+  clip)
+    # The Mac's pasteboard watcher pipes each copy here. Only two formats travel, the
+    # payload is bounded, and the content hash is remembered so the clipboard watcher on
+    # this side does not send the same bytes straight back (see omarchy-continuity-clip-watch).
+    mime="${arg:-text/plain}"
+    case "$mime" in
+      text/plain | text/plain\;charset=utf-8) mime="text/plain;charset=utf-8" ;;
+      image/png) ;;
+      *) echo "rejected" >&2; exit 65 ;;
+    esac
+    max="${OC_CLIP_MAX_BYTES:-8388608}"
+    tmp=$(mktemp "$STATE/clip.XXXXXX")
+    head -c "$((max + 1))" > "$tmp"
+    size=$(stat -c %s "$tmp")
+    if (( size == 0 )) || (( size > max )); then
+      rm -f "$tmp"
+      echo "rejected" >&2
+      exit 65
+    fi
+    sha256sum < "$tmp" | cut -d' ' -f1 > "$STATE/clip-in.sha"
+    # sshd gives the forced command no Wayland environment; find the session's socket.
+    if [[ -z ${WAYLAND_DISPLAY:-} ]]; then
+      for sock in "$XDG_RUNTIME_DIR"/wayland-*; do
+        [[ -S $sock ]] && export WAYLAND_DISPLAY="${sock##*/}" && break
+      done
+    fi
+    # wl-copy forks a child that serves the clipboard for as long as it is current; keep it
+    # out of this SSH session so the disconnect does not take it (and the clipboard) down.
+    if setsid -w wl-copy --type "$mime" < "$tmp" >/dev/null 2>&1; then
+      echo "ok"
+    else
+      log "clipboard from Mac: wl-copy failed ($mime, $size bytes)"
+      echo "failed"
+      rm -f "$tmp"
+      exit 1
+    fi
+    rm -f "$tmp"
     ;;
   *)
     echo "omarchy-continuity: unknown command '${verb}'" >&2

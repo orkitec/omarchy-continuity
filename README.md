@@ -7,7 +7,8 @@ local, rides on the cable, and comes back on its own when the cable is plugged i
 
 | Piece | What does it | Where |
 |---|---|---|
-| Keyboard, mouse, clipboard | [Deskflow](https://github.com/deskflow/deskflow), Omarchy as server | notes below |
+| Keyboard, mouse | [Deskflow](https://github.com/deskflow/deskflow), Omarchy as server | notes below |
+| Clipboard, both directions | this repo: clipboard watchers + `clip` verb over SSH | `linux/`, `mac/` |
 | Network between the machines | Thunderbolt bridge, link-local addresses | notes below |
 | Lock / unlock sync | this repo: macOS lock watcher + SSH forced command on Omarchy | `mac/`, `linux/` |
 | Tab hand-off, both directions | this repo: browser extension + native host + `open` verb | `extension/`, `native/` |
@@ -25,6 +26,7 @@ or agent. The forced command understands a handful of verbs and nothing else:
 | `unlock` | unlock the screen (opt-in, see below) | not available |
 | `awake` | heartbeat: hold off the idle lock while the Mac is unlocked | not available |
 | `open <http(s) url>` | open in the default browser | open in the default browser |
+| `clip [mime]` | stdin becomes the clipboard (`text/plain`, `image/png`) | same, via `pbcopy` / PNG on the pasteboard |
 | `status` | lock screen state as JSON | `locked` / `unlocked` |
 
 Omarchy additionally admits SSH only on the Thunderbolt interface (ufw). On the Mac,
@@ -55,8 +57,10 @@ after its usual timeout, even though you're sitting right there. So the Mac send
 "stay awake" toggle (the same one as `omarchy toggle idle stay-awake`) and remembers
 that it did so. A user timer checks every minute: no heartbeat for about 2.5 minutes,
 because the cable is out, the Mac is asleep or locked, and the toggle is released
-again. A stay-awake you set yourself is never touched. Locking the Mac releases the
-hold immediately and locks Omarchy.
+again. A stay-awake you set yourself is never touched. If the toggle is switched off
+while the Mac is unlocked, the next heartbeat switches it back on: to let Omarchy idle
+while the Mac stays unlocked, lock the Mac or unplug the cable instead. Locking the Mac
+releases the hold immediately and locks Omarchy.
 
 ### Several accounts on the Mac
 
@@ -66,6 +70,28 @@ every account, authorize each printed key on Omarchy with `linux/install.sh`, an
 fast user switching, only the account that owns the display sends anything; its
 heartbeat carries the account name, and Omarchy sends tabs and lock requests to
 whichever account was last seen at the console.
+
+## Clipboard
+
+Deskflow's clipboard sharing is switched off (`clipboardSharing = false` in the server
+config) and the clipboard rides the SSH link instead, in both directions:
+
+- On Omarchy, `omarchy-continuity-clip-watch` (a user service) runs `wl-paste --watch` for
+  text and PNG. Every copy is piped to the Mac's `clip` verb, which runs `pbcopy` or puts
+  the PNG on the pasteboard.
+- On the Mac, the lock watcher polls the pasteboard's change count twice a second, the way
+  clipboard managers do, and pipes text or a PNG (screenshots; TIFF is converted) to
+  Omarchy's `clip` verb, which runs `wl-copy`.
+- Both `clip` verbs record the SHA-256 of what they received and each sender records what it
+  last sent; a change matching either hash is an echo and is not sent again. Payloads are
+  capped at 8 MiB (`OC_CLIP_MAX_BYTES`), files and other formats do not travel, and the
+  Mac side can be turned off with `OC_SYNC_CLIPBOARD=0` in the LaunchAgent.
+
+Why not Deskflow: its Wayland clipboard backend (1.26.0) only notices a change when the
+set of MIME types changes, so copying text after text is never seen; it passes the payload
+as a command-line argument, so anything over 128 KB fails and leaves the clipboard empty;
+it mangles images; and upstream has removed the backend, with the replacement needing a
+portal interface Hyprland does not provide.
 
 ## Tab hand-off
 
@@ -97,7 +123,8 @@ Get the repo onto both machines (clone it, or copy it over the cable). Then:
    on Remote Login (asks for sudo once).
 4. Load `extension/` unpacked in Chrome (Mac) and Chromium (Omarchy).
 
-Test from either side: `ssh -i ~/.ssh/omarchy-continuity <user>@<other> status`.
+Test from either side: `ssh -i ~/.ssh/omarchy-continuity <user>@<other> status`, and the
+clipboard with `echo hi | ssh -i ~/.ssh/omarchy-continuity <user>@<other> clip`.
 Logs: `journalctl -t omarchy-continuity` on Omarchy, `~/Library/Logs/omarchy-continuity.log`
 on the Mac.
 
