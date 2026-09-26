@@ -84,15 +84,27 @@ case "$verb" in
     echo "${out:-failed}"
     ;;
   awake)
-    # Optional argument: the Mac account at the console. Remembered so tab hand-off
-    # and lock requests from here go to that account (the Mac has several).
+    # Optional arguments: the Mac account at the console (remembered so tab hand-off and
+    # lock requests from here go to that account, the Mac has several) and the Mac's
+    # Wi-Fi address, kept for omarchy-continuity-wake-mac since a sleeping Mac cannot
+    # be asked for it.
     if [[ -n $arg ]]; then
-      if [[ $arg =~ ^[a-z_][a-z0-9._-]{0,31}$ ]]; then
-        [[ $(cat "$STATE/mac-user" 2>/dev/null) == "$arg" ]] || log "Mac console user is now $arg"
-        printf '%s\n' "$arg" > "$STATE/mac-user"
+      account="${arg%% *}"; wifi=""
+      [[ $arg == *" "* ]] && wifi="${arg#* }"
+      if [[ $account =~ ^[a-z_][a-z0-9._-]{0,31}$ ]]; then
+        [[ $(cat "$STATE/mac-user" 2>/dev/null) == "$account" ]] || log "Mac console user is now $account"
+        printf '%s\n' "$account" > "$STATE/mac-user"
       else
         echo "rejected" >&2
         exit 65
+      fi
+      if [[ $wifi =~ ^([0-9a-f]{2}:){5}[0-9a-f]{2}$ ]]; then
+        conf="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy-continuity"
+        if ! grep -qsx "mac=$wifi" "$conf/mac-wifi"; then
+          mkdir -p "$conf"
+          { grep -vs '^mac=' "$conf/mac-wifi"; echo "mac=$wifi"; } > "$conf/mac-wifi.tmp" && mv "$conf/mac-wifi.tmp" "$conf/mac-wifi"
+          log "Mac Wi-Fi address is now $wifi"
+        fi
       fi
     fi
     if [[ -f $STATE/locked-by-mac ]]; then

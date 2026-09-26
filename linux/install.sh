@@ -24,6 +24,9 @@ install -Dm755 "$HERE/omarchy-continuity-idle-watch" "$HOME/.local/bin/omarchy-c
 install -Dm644 "$HERE/systemd/omarchy-continuity-idle.service" "$HOME/.config/systemd/user/omarchy-continuity-idle.service"
 install -Dm644 "$HERE/systemd/omarchy-continuity-idle.timer" "$HOME/.config/systemd/user/omarchy-continuity-idle.timer"
 
+# --- wake the sleeping Mac over Wi-Fi (its address arrives with the heartbeat) ---
+install -Dm755 "$HERE/omarchy-continuity-wake-mac" "$HOME/.local/bin/omarchy-continuity-wake-mac"
+
 # --- clipboard: every copy here goes to the Mac (Deskflow's Wayland clipboard is unreliable) ---
 install -Dm755 "$HERE/omarchy-continuity-clip-watch" "$HOME/.local/bin/omarchy-continuity-clip-watch"
 install -Dm644 "$HERE/systemd/omarchy-continuity-clip.service" "$HOME/.config/systemd/user/omarchy-continuity-clip.service"

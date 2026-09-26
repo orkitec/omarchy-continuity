@@ -160,8 +160,27 @@ func onConsole() -> Bool {
 }
 
 // The heartbeat names this account so the Omarchy side knows which Mac
-// account to send tabs and lock requests to.
-let awake = "awake " + NSUserName()
+// account to send tabs and lock requests to, and carries this Mac's Wi-Fi
+// address so Omarchy can wake it with a magic packet when it sleeps (the
+// address is per-network and private, so it is reported rather than configured).
+func wifiAddress() -> String {
+    let p = Process()
+    p.executableURL = URL(fileURLWithPath: "/bin/sh")
+    p.arguments = ["-c", "dev=$(networksetup -listallhardwareports | awk '/Wi-Fi/{getline; print $2}'); [ -n \"$dev\" ] && ifconfig \"$dev\" | awk '/ether/{print $2}'"]
+    let out = Pipe()
+    p.standardOutput = out
+    p.standardError = FileHandle.nullDevice
+    do { try p.run() } catch { return "" }
+    p.waitUntilExit()
+    let s = String(data: out.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
+        .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    return s.range(of: "^([0-9a-f]{2}:){5}[0-9a-f]{2}$", options: .regularExpression) != nil ? s : ""
+}
+
+func awakeCommand() -> String {
+    let mac = wifiAddress()
+    return "awake " + NSUserName() + (mac.isEmpty ? "" : " " + mac)
+}
 
 let center = DistributedNotificationCenter.default()
 center.addObserver(forName: Notification.Name("com.apple.screenIsLocked"), object: nil, queue: nil) { _ in
@@ -170,7 +189,7 @@ center.addObserver(forName: Notification.Name("com.apple.screenIsLocked"), objec
 center.addObserver(forName: Notification.Name("com.apple.screenIsUnlocked"), object: nil, queue: nil) { _ in
     guard onConsole() else { return }
     if syncUnlock { send("unlock") }
-    if keepAwake { send(awake, quiet: true) }
+    if keepAwake { send(awakeCommand(), quiet: true) }
 }
 
 // Fast user switching: the account that leaves the console sends the lock (its screen
@@ -180,7 +199,7 @@ let workspace = NSWorkspace.shared.notificationCenter
 workspace.addObserver(forName: NSWorkspace.sessionDidBecomeActiveNotification, object: nil, queue: nil) { _ in
     guard onConsole(), !screenIsLocked() else { return }
     if syncUnlock { send("unlock") }
-    if keepAwake { send(awake, quiet: true) }
+    if keepAwake { send(awakeCommand(), quiet: true) }
 }
 
 if keepAwake {
@@ -188,10 +207,10 @@ if keepAwake {
     // side drops the hold after ~2.5 minutes without one, so a pulled cable, a
     // sleeping Mac or a switched-away account never leaves it held forever.
     let timer = Timer(timeInterval: 60, repeats: true) { _ in
-        if onConsole() && !screenIsLocked() { send(awake, quiet: true) }
+        if onConsole() && !screenIsLocked() { send(awakeCommand(), quiet: true) }
     }
     RunLoop.main.add(timer, forMode: .common)
-    if onConsole() && !screenIsLocked() { send(awake, quiet: true) }
+    if onConsole() && !screenIsLocked() { send(awakeCommand(), quiet: true) }
 }
 
 if syncClipboard {

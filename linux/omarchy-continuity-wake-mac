@@ -1,0 +1,101 @@
+#!/usr/bin/env python3
+"""omarchy-continuity-wake-mac — wake the sleeping Mac over Wi-Fi.
+
+A sleeping Mac drops the Thunderbolt link, so nothing on that cable can reach it.
+Its Wi-Fi stays half-awake if "Wake for network access" is on (System Settings >
+Battery > Options), and a Wake-on-LAN magic packet on the shared Wi-Fi brings it
+back to its lock screen. Deskflow's client then reconnects and the shared keyboard
+can type the password over there.
+
+The Mac's Wi-Fi address (a per-network private address, so it is learnt, not
+typed) arrives with every heartbeat and is kept in ~/.config/omarchy-continuity/mac-wifi.
+`--learn` fills it from the local network instead, while the Mac is awake and its
+mDNS name resolves.
+
+  omarchy-continuity-wake-mac                 send the magic packets
+  omarchy-continuity-wake-mac --learn [NAME]  record the Mac's Wi-Fi address (default
+                                              name from the file, else MacBook-Pro-4.local)
+"""
+import os
+import socket
+import subprocess
+import sys
+
+CONF_DIR = os.path.join(os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config")), "omarchy-continuity")
+CACHE = os.path.join(CONF_DIR, "mac-wifi")
+
+
+def read_cache():
+    data = {}
+    try:
+        with open(CACHE) as f:
+            for line in f:
+                if "=" in line:
+                    k, v = line.rstrip("\n").split("=", 1)
+                    data[k.strip()] = v.strip()
+    except FileNotFoundError:
+        pass
+    return data
+
+
+def write_cache(data):
+    os.makedirs(CONF_DIR, exist_ok=True)
+    with open(CACHE, "w") as f:
+        for k, v in data.items():
+            f.write(f"{k}={v}\n")
+
+
+def learn(name):
+    out = subprocess.run(["avahi-resolve", "-4", "-n", name], capture_output=True, text=True)
+    if out.returncode != 0 or not out.stdout.strip():
+        sys.exit(f"cannot resolve {name}: is the Mac awake and on the same Wi-Fi?")
+    ip = out.stdout.split()[1]
+    subprocess.run(["ping", "-c", "1", "-W", "1", ip], capture_output=True)
+    neigh = subprocess.run(["ip", "-4", "neigh", "show", ip], capture_output=True, text=True).stdout.split()
+    if "lladdr" not in neigh:
+        sys.exit(f"no MAC address for {ip} in the neighbour table")
+    mac = neigh[neigh.index("lladdr") + 1]
+    data = read_cache()
+    data.update({"name": name, "mac": mac, "ip": ip})
+    write_cache(data)
+    print(f"{name} is {ip} at {mac}")
+
+
+def broadcasts():
+    """Broadcast addresses of every interface that has one (Wi-Fi and the bridge)."""
+    addrs = set()
+    out = subprocess.run(["ip", "-4", "-o", "addr"], capture_output=True, text=True).stdout
+    for line in out.splitlines():
+        parts = line.split()
+        if "brd" in parts:
+            addrs.add(parts[parts.index("brd") + 1])
+    addrs.add("255.255.255.255")
+    return sorted(addrs)
+
+
+def wake():
+    data = read_cache()
+    mac = data.get("mac", "")
+    if not mac:
+        sys.exit("no Mac Wi-Fi address known yet; wait for a heartbeat or run with --learn")
+    payload = b"\xff" * 6 + bytes.fromhex(mac.replace(":", "")) * 16
+    targets = broadcasts()
+    if data.get("ip"):
+        targets.append(data["ip"])
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+        for _ in range(3):
+            for host in targets:
+                for port in (9, 7):
+                    try:
+                        s.sendto(payload, (host, port))
+                    except OSError:
+                        pass
+    print(f"magic packets sent to {mac} via {', '.join(targets)}")
+
+
+if __name__ == "__main__":
+    if len(sys.argv) > 1 and sys.argv[1] == "--learn":
+        learn(sys.argv[2] if len(sys.argv) > 2 else read_cache().get("name", "MacBook-Pro-4.local"))
+    else:
+        wake()

@@ -24,7 +24,7 @@ or agent. The forced command understands a handful of verbs and nothing else:
 |---|---|---|
 | `lock` | lock the screen | display sleep (locks when "require password" is on) |
 | `unlock` | unlock the screen (opt-in, see below) | not available |
-| `awake` | heartbeat: hold off the idle lock while the Mac is unlocked | not available |
+| `awake [account] [wifi-mac]` | heartbeat: hold off the idle lock while the Mac is unlocked; learns the Mac's Wi-Fi address | not available |
 | `open <http(s) url>` | open in the default browser | open in the default browser |
 | `clip [mime]` | stdin becomes the clipboard (`text/plain`, `image/png`) | same, via `pbcopy` / PNG on the pasteboard |
 | `status` | lock screen state as JSON | `locked` / `unlocked` |
@@ -95,6 +95,29 @@ set of MIME types changes, so copying text after text is never seen; it passes t
 as a command-line argument, so anything over 128 KB fails and leaves the clipboard empty;
 it mangles images; and upstream has removed the backend, with the replacement needing a
 portal interface Hyprland does not provide.
+
+## Waking the Mac from Omarchy
+
+A sleeping Mac drops the Thunderbolt link, so the shared keyboard and mouse cannot reach
+it and the Deskflow client is gone. `omarchy-continuity-wake-mac` sends a Wake-on-LAN
+magic packet over the Wi-Fi both machines share; the Mac comes up on its lock screen,
+Deskflow reconnects within a few seconds, and the password can be typed from the shared
+keyboard. Bind it to a key, for example in `~/.config/hypr/bindings.lua`:
+
+```lua
+o.bind("SUPER + SHIFT + M", "Wake the Mac", "omarchy-continuity-wake-mac")
+```
+
+Requirements on the Mac: System Settings > Battery > Options > "Wake for network access"
+(by default only on the power adapter; choose Always for battery too). The Mac's Wi-Fi
+address is a per-network private address, so the heartbeat reports it and Omarchy keeps
+it in `~/.config/omarchy-continuity/mac-wifi`; `omarchy-continuity-wake-mac --learn` fills
+it from the network while the Mac is awake. Nothing unlocks the Mac itself: macOS has no
+programmatic unlock, and typing the password over Deskflow is the intended step.
+
+For a Mac that stays on the desk plugged in, "Prevent automatic sleeping on power adapter
+when the display is off" avoids the problem entirely: the display sleeps, the machine and
+its Deskflow client stay up, and entering its screen wakes the display.
 
 ## Tab hand-off
 
