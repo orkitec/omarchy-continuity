@@ -1,0 +1,45 @@
+#!/bin/bash
+# omarchy-continuity-presence — wake the Mac when you are back at this machine.
+#
+# Two signs that you have sat down here: this machine resumes from suspend (lid open,
+# power button) and this machine's screen unlocks. On either, send the Mac the
+# Wake-on-LAN packets (omarchy-continuity-wake-mac) so it is on its lock screen and
+# Deskflow has reconnected by the time you look over. Skipped while the Mac's heartbeat
+# is fresh (it is awake and unlocked already), and at most once every 30 seconds.
+set -u
+export PATH="$HOME/.local/bin:/usr/local/bin:/usr/bin:$PATH"
+STATE="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/omarchy-continuity"
+mkdir -p "$STATE"
+log() { logger -t omarchy-continuity "$*"; }
+
+wake_mac() {
+  local reason="$1" now last=0 beat=0
+  now=$(date +%s)
+  [[ -f $STATE/wake-mac.last ]] && read -r last < "$STATE/wake-mac.last"
+  (( now - last < 30 )) && return
+  [[ -f $STATE/awake ]] && beat=$(stat -c %Y "$STATE/awake")
+  if (( now - beat < 150 )); then
+    logger -t omarchy-continuity -p user.debug "not waking the Mac on $reason: heartbeat is fresh"
+    return
+  fi
+  printf '%s\n' "$now" > "$STATE/wake-mac.last"
+  if omarchy-continuity-wake-mac >/dev/null 2>&1; then
+    log "waking the Mac ($reason)"
+  else
+    log "cannot wake the Mac ($reason): no Wi-Fi address known yet"
+  fi
+}
+
+# Resume: logind announces PrepareForSleep(false) on the system bus after every wake.
+dbus-monitor --system "type='signal',interface='org.freedesktop.login1.Manager',member='PrepareForSleep'" 2>/dev/null \
+  | while read -r line; do
+      [[ $line == *"boolean false"* ]] && wake_mac resume
+    done &
+
+# Unlock: the lock screen has no event to subscribe to; a two-second poll is cheap.
+prev=$(omarchy-shell lock isLocked 2>/dev/null)
+while sleep 2; do
+  cur=$(omarchy-shell lock isLocked 2>/dev/null)
+  [[ $prev == "true" && $cur == "false" ]] && wake_mac unlock
+  prev="$cur"
+done

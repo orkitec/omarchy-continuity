@@ -24,16 +24,18 @@ install -Dm755 "$HERE/omarchy-continuity-idle-watch" "$HOME/.local/bin/omarchy-c
 install -Dm644 "$HERE/systemd/omarchy-continuity-idle.service" "$HOME/.config/systemd/user/omarchy-continuity-idle.service"
 install -Dm644 "$HERE/systemd/omarchy-continuity-idle.timer" "$HOME/.config/systemd/user/omarchy-continuity-idle.timer"
 
-# --- wake the sleeping Mac over Wi-Fi (its address arrives with the heartbeat) ---
+# --- wake the sleeping Mac over Wi-Fi (its address arrives with the heartbeat), on resume/unlock here ---
 install -Dm755 "$HERE/omarchy-continuity-wake-mac" "$HOME/.local/bin/omarchy-continuity-wake-mac"
+install -Dm755 "$HERE/omarchy-continuity-presence" "$HOME/.local/bin/omarchy-continuity-presence"
+install -Dm644 "$HERE/systemd/omarchy-continuity-presence.service" "$HOME/.config/systemd/user/omarchy-continuity-presence.service"
 
 # --- clipboard: every copy here goes to the Mac (Deskflow's Wayland clipboard is unreliable) ---
 install -Dm755 "$HERE/omarchy-continuity-clip-watch" "$HOME/.local/bin/omarchy-continuity-clip-watch"
 install -Dm644 "$HERE/systemd/omarchy-continuity-clip.service" "$HOME/.config/systemd/user/omarchy-continuity-clip.service"
 systemctl --user daemon-reload
 systemctl --user enable --now omarchy-continuity-idle.timer >/dev/null
-systemctl --user enable omarchy-continuity-clip.service >/dev/null
-systemctl --user restart omarchy-continuity-clip.service
+systemctl --user enable omarchy-continuity-clip.service omarchy-continuity-presence.service >/dev/null
+systemctl --user restart omarchy-continuity-clip.service omarchy-continuity-presence.service
 
 # --- accept the Mac's key, restricted to the daemon and to link-local sources ---
 mkdir -p "$HOME/.ssh" && chmod 700 "$HOME/.ssh"

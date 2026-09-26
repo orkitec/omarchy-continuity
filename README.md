@@ -102,7 +102,10 @@ A sleeping Mac drops the Thunderbolt link, so the shared keyboard and mouse cann
 it and the Deskflow client is gone. `omarchy-continuity-wake-mac` sends a Wake-on-LAN
 magic packet over the Wi-Fi both machines share; the Mac comes up on its lock screen,
 Deskflow reconnects within a few seconds, and the password can be typed from the shared
-keyboard. Bind it to a key, for example in `~/.config/hypr/bindings.lua`:
+keyboard. The `omarchy-continuity-presence` user service sends it by itself whenever
+this machine resumes from suspend or its screen unlocks (you are evidently back), unless
+the Mac's heartbeat shows it awake already. For a manual nudge, bind the command to a
+key, for example in `~/.config/hypr/bindings.lua`:
 
 ```lua
 o.bind("SUPER + SHIFT + M", "Wake the Mac", "omarchy-continuity-wake-mac")
