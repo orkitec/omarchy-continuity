@@ -173,6 +173,16 @@ center.addObserver(forName: Notification.Name("com.apple.screenIsUnlocked"), obj
     if keepAwake { send(awake, quiet: true) }
 }
 
+// Fast user switching: the account that leaves the console sends the lock (its screen
+// locks), but the account that arrives gets no unlock notification, because its own
+// screen was never locked. Treat becoming the console session like an unlock.
+let workspace = NSWorkspace.shared.notificationCenter
+workspace.addObserver(forName: NSWorkspace.sessionDidBecomeActiveNotification, object: nil, queue: nil) { _ in
+    guard onConsole(), !screenIsLocked() else { return }
+    if syncUnlock { send("unlock") }
+    if keepAwake { send(awake, quiet: true) }
+}
+
 if keepAwake {
     // Heartbeat: once a minute while unlocked and at the console. The Omarchy
     // side drops the hold after ~2.5 minutes without one, so a pulled cable, a

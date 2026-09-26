@@ -8,7 +8,10 @@
 #   lock            lock the screen (and stop holding it awake)
 #   unlock          unlock the screen (needs the face-unlock plugin's opt-in IPC unlock)
 #   awake           heartbeat: the Mac is connected and unlocked, keep this machine from
-#                   idle-locking; expires on its own if the heartbeats stop (cable out)
+#                   idle-locking; expires on its own if the heartbeats stop (cable out).
+#                   If the screen is locked because the Mac locked it, this unlocks it:
+#                   after a fast user switch over there the arriving account has no
+#                   unlock event of its own, only heartbeats.
 #   status          lock screen status as JSON
 #   open <url>      open an http(s) URL in the default browser
 #   clip [mime]     stdin becomes this machine's clipboard (text/plain or image/png);
@@ -66,12 +69,16 @@ case "$verb" in
       echo "already-locked"
     else
       omarchy-system-lock >/dev/null 2>&1
+      # Remember that the Mac did this, so a heartbeat may undo it. A lock you did
+      # yourself here stays locked while the Mac's heartbeats keep coming.
+      touch "$STATE/locked-by-mac"
       log "lock requested by ${peer:-local}"
       echo "ok"
     fi
     ;;
   unlock)
     out=$(omarchy-shell lock unlock 2>&1)
+    rm -f "$STATE/locked-by-mac"
     log "unlock requested by ${peer:-local}: ${out:-no-reply}"
     hold_awake
     echo "${out:-failed}"
@@ -87,6 +94,13 @@ case "$verb" in
         echo "rejected" >&2
         exit 65
       fi
+    fi
+    if [[ -f $STATE/locked-by-mac ]]; then
+      if [[ $(omarchy-shell lock isLocked 2>/dev/null) == "true" ]]; then
+        out=$(omarchy-shell lock unlock 2>&1)
+        log "unlocked on heartbeat (Mac locked this screen, is unlocked now): ${out:-no-reply}"
+      fi
+      rm -f "$STATE/locked-by-mac"
     fi
     hold_awake
     echo "ok"

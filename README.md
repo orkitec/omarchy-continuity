@@ -69,7 +69,10 @@ every account, authorize each printed key on Omarchy with `linux/install.sh`, an
 `mac/install.sh --authorize` in every account so Omarchy can reach each of them. With
 fast user switching, only the account that owns the display sends anything; its
 heartbeat carries the account name, and Omarchy sends tabs and lock requests to
-whichever account was last seen at the console.
+whichever account was last seen at the console. Switching accounts locks Omarchy (the
+leaving account's screen locks) and the arriving account unlocks it as soon as it owns
+the console; should that message be lost, its first heartbeat unlocks a screen the Mac
+locked. A lock you did on Omarchy yourself is never undone by a heartbeat.
 
 ## Clipboard
 
