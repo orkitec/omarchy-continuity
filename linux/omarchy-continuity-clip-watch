@@ -26,8 +26,9 @@ peer() {
   while IFS='=' read -r k v; do
     case "$k" in host) host="$v" ;; user) user="$v" ;; key) key="$v" ;; esac
   done < "$CONF"
-  # The Mac account at the console, as reported by its heartbeat, wins over the peer file.
-  if [[ -s $STATE/mac-user ]]; then read -r active < "$STATE/mac-user"; [[ -n $active ]] && user="$active"; fi
+  # The Mac account at the console, as last reported by its heartbeat, wins over the peer file.
+  local seen="${CONF%/*}/mac-user"
+  if [[ -s $seen ]]; then read -r active < "$seen"; [[ -n $active ]] && user="$active"; fi
   [[ -n $host && -n $user && -f $key ]]
 }
 

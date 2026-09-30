@@ -92,8 +92,14 @@ case "$verb" in
       account="${arg%% *}"; wifi=""
       [[ $arg == *" "* ]] && wifi="${arg#* }"
       if [[ $account =~ ^[a-z_][a-z0-9._-]{0,31}$ ]]; then
-        [[ $(cat "$STATE/mac-user" 2>/dev/null) == "$account" ]] || log "Mac console user is now $account"
-        printf '%s\n' "$account" > "$STATE/mac-user"
+        # Kept under ~/.config, not the runtime dir, so it survives a reboot here: the
+        # clipboard watcher needs an account before the first heartbeat arrives.
+        conf="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy-continuity"
+        if [[ $(cat "$conf/mac-user" 2>/dev/null) != "$account" ]]; then
+          mkdir -p "$conf"
+          printf '%s\n' "$account" > "$conf/mac-user.tmp" && mv "$conf/mac-user.tmp" "$conf/mac-user"
+          log "Mac console user is now $account"
+        fi
       else
         echo "rejected" >&2
         exit 65

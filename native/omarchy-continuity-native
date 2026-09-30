@@ -36,11 +36,11 @@ def load_peer():
     except FileNotFoundError:
         pass
     # On the Omarchy side the daemon records which Mac account is at the console
-    # (from the awake heartbeat); prefer it over the static user when present.
+    # (from the awake heartbeat, kept next to the peer file); prefer it over the
+    # static user when present.
     if sys.platform != "darwin":
-        runtime = os.environ.get("XDG_RUNTIME_DIR", "/run/user/%d" % os.getuid())
         try:
-            with open(os.path.join(runtime, "omarchy-continuity", "mac-user")) as f:
+            with open(os.path.join(os.path.dirname(config_path()), "mac-user")) as f:
                 active = f.read().strip()
             if active:
                 peer["user"] = active
