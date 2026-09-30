@@ -74,6 +74,14 @@ leaving account's screen locks) and the arriving account unlocks it as soon as i
 the console; should that message be lost, its first heartbeat unlocks a screen the Mac
 locked. A lock you did on Omarchy yourself is never undone by a heartbeat.
 
+The Omarchy Deskflow server has a single slot for the Mac. A Deskflow client left running
+in an account you switched away from keeps that slot, so the account in front is refused
+with "a client with that name is already connected", and a background session can't take
+input anyway. The lock watcher therefore hands Deskflow over: when an account becomes the
+active one it starts its Deskflow, and when you switch away it quits it. A screen lock in
+the same account leaves Deskflow running, so the password can still be typed on the lock
+screen. Turn this off with `OC_MANAGE_DESKFLOW=0` in the LaunchAgent plist.
+
 ## Clipboard
 
 Deskflow's clipboard sharing is switched off (`clipboardSharing = false` in the server

@@ -20,6 +20,8 @@
 //   OC_KEEP_AWAKE   "1" to keep Omarchy awake while this Mac is unlocked (default 1)
 //   OC_SYNC_CLIPBOARD "1" to send this Mac's clipboard to Omarchy as it changes (default 1)
 //   OC_CLIP_MAX_BYTES largest clipboard payload to send (default 8 MiB)
+//   OC_MANAGE_DESKFLOW "1" to run Deskflow only in the account at the console (default 1)
+//   OC_DESKFLOW_APP   Deskflow app bundle (default /Applications/Deskflow.app)
 import AppKit
 import CoreGraphics
 import CryptoKit
@@ -34,6 +36,8 @@ let syncUnlock = (env["OC_SYNC_UNLOCK"] ?? "1") == "1"
 let keepAwake = (env["OC_KEEP_AWAKE"] ?? "1") == "1"
 let syncClipboard = (env["OC_SYNC_CLIPBOARD"] ?? "1") == "1"
 let clipMaxBytes = Int(env["OC_CLIP_MAX_BYTES"] ?? "") ?? 8 * 1024 * 1024
+let manageDeskflow = (env["OC_MANAGE_DESKFLOW"] ?? "1") == "1"
+let deskflowApp = env["OC_DESKFLOW_APP"] ?? "/Applications/Deskflow.app"
 let stateDir = NSHomeDirectory() + "/Library/Application Support/omarchy-continuity/state"
 
 let queue = DispatchQueue(label: "omarchy-continuity.send")
@@ -149,6 +153,37 @@ func session() -> [String: Any] {
     return (CGSessionCopyCurrentDictionary() as? [String: Any]) ?? [:]
 }
 
+// Deskflow hand-over between Mac accounts (fast user switching). Only this account's
+// processes are touched; a screen lock in the same account leaves Deskflow running,
+// so the password can still be typed on the lock screen from the shared keyboard.
+func runQuiet(_ path: String, _ args: [String]) -> Int32 {
+    let p = Process()
+    p.executableURL = URL(fileURLWithPath: path)
+    p.arguments = args
+    p.standardOutput = FileHandle.nullDevice
+    p.standardError = FileHandle.nullDevice
+    do { try p.run() } catch { return -1 }
+    p.waitUntilExit()
+    return p.terminationStatus
+}
+
+func startDeskflow() {
+    let uid = String(getuid())
+    if runQuiet("/usr/bin/pgrep", ["-U", uid, "-x", "Deskflow"]) == 0 { return }
+    // -g: don't bring it to the front, -j: launch hidden.
+    let rc = runQuiet("/usr/bin/open", ["-g", "-j", "-a", deskflowApp])
+    NSLog("omarchy-continuity: account became active, started Deskflow (open exit %d)", rc)
+}
+
+func stopDeskflow() {
+    let uid = String(getuid())
+    let gui = runQuiet("/usr/bin/pkill", ["-U", uid, "-x", "Deskflow"])
+    let core = runQuiet("/usr/bin/pkill", ["-U", uid, "-x", "deskflow-core"])
+    if gui == 0 || core == 0 {
+        NSLog("omarchy-continuity: account switched away, stopped Deskflow so the active account gets the connection")
+    }
+}
+
 func screenIsLocked() -> Bool {
     return (session()["CGSSessionScreenIsLocked"] as? Bool) ?? false
 }
@@ -197,9 +232,19 @@ center.addObserver(forName: Notification.Name("com.apple.screenIsUnlocked"), obj
 // screen was never locked. Treat becoming the console session like an unlock.
 let workspace = NSWorkspace.shared.notificationCenter
 workspace.addObserver(forName: NSWorkspace.sessionDidBecomeActiveNotification, object: nil, queue: nil) { _ in
+    if manageDeskflow { startDeskflow() }
     guard onConsole(), !screenIsLocked() else { return }
     if syncUnlock { send("unlock") }
     if keepAwake { send(awakeCommand(), quiet: true) }
+}
+// The Omarchy Deskflow server has one slot for the Mac. A client left running in an
+// account you switched away from holds it, so the account in front gets refused
+// ("already connected") and a background session can't take input anyway.
+workspace.addObserver(forName: NSWorkspace.sessionDidResignActiveNotification, object: nil, queue: nil) { _ in
+    if manageDeskflow { stopDeskflow() }
+}
+if manageDeskflow {
+    if onConsole() { startDeskflow() } else { stopDeskflow() }
 }
 
 if keepAwake {
